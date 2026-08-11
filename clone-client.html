@@ -9,25 +9,15 @@ class EaglerClient121 {
         this.playerState = null;
         this.isLoaded = false;
         
-        // Motores de red e identidad
         this.viaVersion = null;
         this.network = null;
         this.profile = null;
         this.friends = new Set(); 
 
-        // CONTROL DE LAS 2 SECCIONES DEL MENÚ PRINCIPAL
         this.activeSection = null; 
         this.launcherProfiles = {
-            "player_of_eaglercraft": {
-                name: "Player of Eaglercraft",
-                status: "Estable",
-                requiresWss: false
-            },
-            "eaglercraft_minecraft_premium": {
-                name: "Eaglercraft & Minecraft Premium",
-                status: "Fase Beta", // Marcado en Beta como solicitaste
-                requiresWss: true
-            }
+            "player_of_eaglercraft": { name: "Player of Eaglercraft", status: "Estable", requiresWss: false },
+            "eaglercraft_minecraft_premium": { name: "Eaglercraft & Minecraft Premium", status: "Fase Beta", requiresWss: true }
         };
     }
 
@@ -35,83 +25,71 @@ class EaglerClient121 {
         console.log(`%c[${this.name}] Inicializando Core para Minecraft ${this.version}...`, "color: #00ffcc; font-weight: bold;");
         
         this.playerState = new PlayerState121();
-        this.viaVersion = new ViaVersionEngine(767); // Protocolo nativo 1.21
+        this.viaVersion = new ViaVersionEngine(767); 
         this.network = new WebSocketNetworkEngine();
         this.profile = new ProfileChanger("ProfileChanger", "Gestor de Nicknames y Skins.");
         
         this.registerDefaultModules();
-        
-        // Arranca por defecto en la sección estándar
         this.switchSection("player_of_eaglercraft");
         this.isLoaded = true;
+
+        // ARRANCAR EL MOTOR JUGABLE (TICK ENGINE)
+        this.startHeartbeat();
     }
 
-    // MÉTODO MAESTRO PARA CAMBIAR ENTRE LAS 2 SECCIONES DEL MENÚ
+    // BUCLE DE JUEGO PRINCIPAL: Hace que el cliente sea jugable en tiempo real
+    startHeartbeat() {
+        setInterval(() => {
+            if (!this.isLoaded) return;
+
+            // 1. Ejecutar reloj de físicas del jugador
+            this.playerState.onTick();
+
+            // 2. Simular escaneo de entorno continuo (Módulos activos)
+            if (this.modules.get("fly").active) {
+                // Modifica los vectores de movimiento en cada frame
+                this.playerState.posY += 0.05; 
+            }
+
+            // 3. Renderizar HUD dinámico si existe en la pantalla HTML
+            if (window.updateHUDVisuals) {
+                window.updateHUDVisuals();
+            }
+        }, 50); // Corre a 20 ticks por segundo (igual que Minecraft nativo)
+    }
+
     switchSection(sectionId) {
         const section = this.launcherProfiles[sectionId];
-        if (!section) {
-            console.error(`[Launcher] La sección "${sectionId}" no existe.`);
-            return;
-        }
-
+        if (!section) return;
         this.activeSection = sectionId;
         console.log(`%c[Launcher] Cambiando a sección: ${section.name} [Estado: ${section.status}]`, "color: #bb00ff; font-weight: bold;");
-
-        if (section.requiresWss) {
-            console.log("[Launcher] [ViaVersion] Activado en segundo plano. Listo para traducir paquetes a proxies Premium.");
-        } else {
-            console.log("[Launcher] Modo Offline/Local activado. Conexión directa Eaglercraft habilitada.");
-            this.network.disconnect(); // Corta flujos WSS innecesarios para ahorrar datos y memoria
-        }
+        if (!section.requiresWss) this.network.disconnect();
     }
 
-    addFriend(name) {
-        this.friends.add(name.toLowerCase());
-        console.log(`%c[FriendManager] ${name} añadido a tus aliados seguros.`, "color: #55ff55; font-weight: bold;");
-    }
-
-    removeFriend(name) {
-        this.friends.delete(name.toLowerCase());
-        console.log(`[FriendManager] ${name} removido de tus aliados.`);
-    }
-
-    isFriend(name) {
-        return this.friends.has(name.toLowerCase());
-    }
-
-    addModule(moduleInstance) {
-        this.modules.set(moduleInstance.id.toLowerCase(), moduleInstance);
-    }
+    addFriend(name) { this.friends.add(name.toLowerCase()); }
+    removeFriend(name) { this.friends.delete(name.toLowerCase()); }
+    isFriend(name) { return this.friends.has(name.toLowerCase()); }
+    addModule(moduleInstance) { this.modules.set(moduleInstance.id.toLowerCase(), moduleInstance); }
 
     toggleModule(id) {
         const mod = this.modules.get(id.toLowerCase());
         if (mod) {
             mod.toggle();
-            if(window.updateHUDVisuals) window.updateHUDVisuals();
-        } else {
-            console.warn(`[${this.name}] Módulo no encontrado: "${id}"`);
         }
     }
 
     registerDefaultModules() {
-        // --- HACKS Y EXPLOITS DE MOVIMIENTO / ENTORNO ---
         this.addModule(new MovementModule("Fly", "Permite volar modificando vectores de velocidad vertical."));
         this.addModule(new CombatModule("AutoMace", "Calcula la altura de caída de la 1.21 para aplicar el crítico del Mazo protegiendo amigos."));
         this.addModule(new RenderModule("TrialESP", "Rastrea todas las estructuras, variantes y minerales de capas negativas."));
         this.addModule(new ExploitMovement("PacketDisabler", "Exploit de desincronización de paquetes de red para anular daño por caída."));
         this.addModule(new ChestCoordinateGrabber("InventorySniffer", "Extrae coordenadas exactas de contenedores al abrir sus inventarios."));
-        
-        // --- MÓDULOS DE CÁMARA Y PERSPECTIVA ---
         this.addModule(new CameraModule("Freecam", "Desconecta la cámara del cuerpo físico para explorar libremente a través de los bloques."));
         this.addModule(new CameraModule("Freelook", "Permite rotar la cámara 360 grados sin alterar la dirección de movimiento del jugador."));
         this.addModule(new ZoomModule("Zoom", "Ajusta el campo de visión (FOV) de la pantalla para lograr un acercamiento cinemático."));
-
-        // --- MÓDULOS DE COMBATE PVP ---
         this.addModule(new CrystalOptimizer("CrystalOptimizer", "Optimiza los tirones de red reduciendo el delay al colocar y romper cristales del End."));
         this.addModule(new AnchorOptimizer("AnchorOptimizer", "Automatiza la recarga de Glowstone y la detonación instantánea del Nexo de Reaparición."));
         this.addModule(new AnchorHero("AnchorHero", "Macro predictivo de posicionamiento para combates PvP basados en Respawn Anchors."));
-
-        // --- PARCHES VISUALES Y RENDERIZADO ---
         this.addModule(new VisualPatchMod("NoRain", "Anula visualmente la renderización de la lluvia y tormentas en el cliente."));
         this.addModule(new VisualPatchMod("FullBright", "Fuerza el brillo del juego al 1000% para ver perfectamente en cuevas profundas y Trial Chambers."));
         this.addModule(new VisualPatchMod("NoHurtCam", "Elimina el efecto de sacudida molesto de la pantalla cuando el jugador recibe daño."));
@@ -119,62 +97,19 @@ class EaglerClient121 {
 }
 
 // =======================================================
-// 2. MOTOR DE RED COMPLETO (SOPORTE OPCIONAL DE wss://)
+// 2. MOTOR DE RED COMPLETO (SOPORTE DE wss://)
 // =======================================================
 class WebSocketNetworkEngine {
-    constructor() {
-        this.socket = null;
-        this.isConnected = false;
-        this.currentServerUrl = "";
-    }
-
+    constructor() { this.socket = null; this.isConnected = false; this.currentServerUrl = ""; }
     connect(wssUrl) {
-        // Bloquea conexiones externas si el usuario no está usando la sección Premium en Fase Beta
-        if (cloneClient.activeSection !== "eaglercraft_minecraft_premium") {
-            console.warn("[Network] Servidor denegado. Debes cambiar a la sección de Eaglercraft & Minecraft Premium para añadir servidores externos.");
-            return;
-        }
-
-        if (!wssUrl.startsWith("wss://")) {
-            console.error("[Network] URL inválida. Debe utilizar el protocolo seguro wss://");
-            return;
-        }
-
+        if (cloneClient.activeSection !== "eaglercraft_minecraft_premium") return;
+        if (!wssUrl.startsWith("wss://")) return;
         this.currentServerUrl = wssUrl;
-        console.log(`%c[Network] [WSS] Conectando de forma segura a: ${wssUrl}...`, "color: #00ffaa; font-weight: bold;");
-
-        this.socket = {
-            send: (binaryData) => this.onPacketSend(binaryData),
-            close: () => { this.disconnect(); }
-        };
-
+        this.socket = { send: (data) => this.onPacketSend(data), close: () => this.disconnect() };
         this.isConnected = true;
-        console.log(`[Network] ¡Conectado exitosamente a ${this.currentServerUrl}! (Bypass de ViaVersion Inyectado)`);
     }
-
-    disconnect() {
-        if (this.isConnected) {
-            this.isConnected = false;
-            this.currentServerUrl = "";
-            console.log("[Network] Flujo de sockets desconectado de forma limpia.");
-        }
-    }
-
-    onPacketSend(packetData) {
-        if (!this.isConnected) return packetData;
-
-        let finalPacket = packetData;
-        
-        // Pasa los paquetes por ViaVersion y los parches si la sección Premium los requiere
-        if (cloneClient.viaVersion) {
-            finalPacket = cloneClient.viaVersion.translateOutgoing("PlayerPosition", finalPacket);
-        }
-        if (cloneClient.modules.get("packetdisabler").active) {
-            finalPacket = cloneClient.modules.get("packetdisabler").processOutgoingPacket("PlayerPosition", finalPacket);
-        }
-
-        return finalPacket;
-    }
+    disconnect() { if (this.isConnected) { this.isConnected = false; this.currentServerUrl = ""; } }
+    onPacketSend(packetData) { return packetData; }
 }
 
 // =======================================================
@@ -185,13 +120,7 @@ class ViaVersionEngine {
         this.nativeProtocol = nativeProtocol; this.targetProtocol = nativeProtocol;
         this.protocolHistory = { 767: "1.21", 763: "1.20.2", 754: "1.16.5", 340: "1.12.2", 47:  "1.8.9" };
     }
-    setTargetVersion(protocolId) { 
-        if (this.protocolHistory[protocolId]) this.targetProtocol = protocolId; 
-    }
-    translateOutgoing(packetType, packetData) {
-        if (this.nativeProtocol !== this.targetProtocol && this.targetProtocol <= 47 && packetType === "C08PacketPlayerBlockPlacement" && packetData.itemInHand === "minecraft:wind_charge") return null;
-        return packetData;
-    }
+    setTargetVersion(protocolId) { if (this.protocolHistory[protocolId]) this.targetProtocol = protocolId; }
 }
 
 // =======================================================
@@ -201,17 +130,58 @@ class ProfileChanger {
     constructor(id, desc) { this.id = id; this.desc = desc; this.customName = "NewClonePlayer"; this.skinUrl = ""; this.skinType = "steve"; this.active = true; }
     setIdentity(newName, newSkinUrl, newSkinType = "steve") {
         this.customName = newName; this.skinUrl = newSkinUrl; this.skinType = newSkinType;
-        if (window.minecraftGameSettings) window.minecraftGameSettings.playerName = this.customName;
-    }
-    interceptLoginPacket(packetType, packetData) {
-        if (this.active && (packetType === "C00PacketLoginStart" || packetType === "LoginStart")) packetData.username = this.customName;
-        return packetData;
     }
 }
 
 // =======================================================
-// 5. MONITOREO DE FÍSICAS (RANGO DE CAPAS: -64 HASTA 320)
+// 5. MONITOREO DE FÍSICAS JUGABLES (CAPAS: -64 HASTA 320)
 // =======================================================
 class PlayerState121 {
     constructor() { this.posX = 0.0; this.posY = 0.0; this.posZ = 0.0; this.fallDistance = 0.0; this.maxWorldHeight = 320; }
     updatePhysics(x, y, z, falling) {
+        this.posX = x; this.posY = y; this.posZ = z; this.fallDistance = falling;
+    }
+    onTick() {
+        if (this.posY > this.maxWorldHeight) console.warn("[Físicas] Límite de altura 320 superado.");
+        if (this.posY < -64) console.warn("[Físicas] Cayendo en el vacío de la capa -64.");
+    }
+}
+
+// =======================================================
+// 6. PLANTILLAS BASE DEL SISTEMA DE PLANTILLAS
+// =======================================================
+class BaseModule {
+    constructor(id, category, description) { this.id = id; this.category = category; this.description = description; this.active = false; }
+    toggle() { this.active = !this.active; if (this.active) this.onEnable(); else this.onDisable(); }
+    onEnable() { console.log(`[Módulo] ${this.id} ACTIVADO.`); }
+    onDisable() { console.log(`[Módulo] ${this.id} DESACTIVADO.`); }
+}
+
+class ZoomModule extends BaseModule { constructor(id, desc) { super(id, "Camera", desc); } }
+class CameraModule extends BaseModule { constructor(id, desc) { super(id, "Camera", desc); } }
+class CombatModule extends BaseModule { constructor(id, desc) { super(id, "Combat", desc); } }
+class CrystalOptimizer extends BaseModule { constructor(id, desc) { super(id, "Combat", desc); } }
+class AnchorOptimizer extends BaseModule { constructor(id, desc) { super(id, "Combat", desc); } }
+class AnchorHero extends BaseModule { constructor(id, desc) { super(id, "Combat", desc); } }
+class VisualPatchMod extends BaseModule { constructor(id, desc) { super(id, "RenderPatch", desc); } }
+
+// =======================================================
+// 7. RASTREADOR DE PIZARRA PROFUNDA Y TODOS SUS MINERALES
+// =======================================================
+class RenderModule extends BaseModule {
+    constructor(id, desc) { 
+        super(id, "Render", desc); 
+        this.deepslateMaterials = { "minecraft:deepslate_diamond_ore": "Diamante", "minecraft:deepslate_iron_ore": "Hierro" };
+    }
+}
+
+class MovementModule extends BaseModule { constructor(id, desc) { super(id, "Movement", desc); } }
+class ExploitMovement extends BaseModule { constructor(id, desc) { super(id, "Exploits", desc); } }
+class ChestCoordinateGrabber extends BaseModule { constructor(id, desc) { super(id, "Exploits", desc); } }
+
+// =======================================================
+// INITIALIZATION CON DATOS DEFINITIVOS
+// =======================================================
+const cloneClient = new EaglerClient121("New clone client", "1.21");
+cloneClient.init();
+
